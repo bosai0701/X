@@ -12,8 +12,13 @@
   <!-- 動画埋め込み -->
   <video width="640" height="360" autoplay loop muted>
     <source src="sample.mov" type="video/quicktime">
-    お使いのブラウザは動画をサポートしていません。
-  </video>
+    <source src="video.webm" type="video/webm">
+        <!-- 古いブラウザ用のメッセージ -->
+        お使いのブラウザは動画タグに対応していません。
+        <source src="sample.mov" type="video/quicktime">
+        <!-- MOVがサポートされていない場合のメッセージ -->
+        お使いのブラウザはMOV形式の動画再生をサポートしていません。
+    </video>
 
 </body>
 </html>

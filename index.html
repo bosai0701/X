@@ -1,21 +1,19 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=0.5">
-    <title>動画再生</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動画埋め込み例</title>
 </head>
 <body>
-    <h1>動画再生の例</h1>
-    <video controls width="640" height="360">
-        <video src="sample.mov" autoplay muted playsinline loop>
-        <source src="sample.mov" type="sample/mov">
-        <source src="sample.webm" type="sample/webm">
-        <!-- 古いブラウザ用のメッセージ -->
-        お使いのブラウザは動画タグに対応していません。
-        <source src="sample.mov" type="video/quicktime">
-        <!-- MOVがサポートされていない場合のメッセージ -->
-        お使いのブラウザはMOV形式の動画再生をサポートしていません。
-    </video>
+
+  <h1>ループするMOV動画の埋め込み</h1>
+
+  <!-- 動画埋め込み -->
+  <video width="640" height="360" autoplay loop muted>
+    <source src="sample.mov" type="video/quicktime">
+    お使いのブラウザは動画をサポートしていません。
+  </video>
+
 </body>
 </html>

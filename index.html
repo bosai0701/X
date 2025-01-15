@@ -10,7 +10,7 @@
       width: 100%;
       border-collapse: collapse;
       margin-top: 20px;
-      display: none; /* 初期状態は非表示 */
+      display: none; /* 初期状態で非表示 */
     }
     th, td {
       border: 1px solid #ddd;
@@ -33,7 +33,7 @@
       color: red;
       font-size: 18px;
       margin-top: 20px;
-      display: none; /* 初期状態は非表示 */
+      display: none; /* 初期状態で非表示 */
     }
     #clock {
       font-size: 20px;
@@ -67,8 +67,8 @@
   <script>
     const apiUrl = "https://api.p2pquake.net/v2/history?codes=552&limit=1";
 
-    // データ取得と表示の処理
-    function fetchAndDisplayData() {
+    // 時計の更新
+    function updateClock() {
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -77,9 +77,11 @@
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const seconds = String(now.getSeconds()).padStart(2, '0');
       const timeString = `${year}年${month}月${date}日 ${hours}:${minutes}:${seconds}`;
-      const clockElement = document.getElementById("clock");
+      document.getElementById("clock").textContent = timeString;
+    }
 
-      // 津波データの取得
+    // データ取得と表示の処理
+    function fetchAndDisplayData() {
       fetch(apiUrl)
         .then(response => response.json())
         .then(data => {
@@ -95,7 +97,7 @@
 
           data.forEach(event => {
             event.areas.forEach(area => {
-              const areaData = {
+              allAreas.push({
                 name: area.name,
                 grade: area.grade,
                 maxHeight: area.maxHeight?.value || 0,
@@ -103,8 +105,7 @@
                 condition: area.firstHeight?.condition || "不明",
                 source: event.issue.source || "不明",
                 time: event.issue.time || "不明"
-              };
-              allAreas.push(areaData);
+              });
             });
           });
 
@@ -114,61 +115,37 @@
           }
 
           table.style.display = "table"; // テーブルを表示
-          const sortedAreas = allAreas.sort((a, b) => b.maxHeight - a.maxHeight);
-          sortedAreas.forEach(area => {
-            const row = document.createElement("tr");
+          allAreas
+            .sort((a, b) => b.maxHeight - a.maxHeight)
+            .forEach(area => {
+              const row = document.createElement("tr");
+              row.className = 
+                area.grade === "Watch" ? "watch" :
+                area.grade === "Warning" ? "warning" : 
+                area.grade === "BigWarning" ? "big-warning" : "";
 
-            let rowClass = "";
-            if (area.grade === "Watch") {
-              rowClass = "watch";
-            } else if (area.grade === "Warning") {
-              rowClass = "warning";
-            } else if (area.grade === "BigWarning") {
-              rowClass = "big-warning";
-            }
-            row.className = rowClass;
-
-            const areaCell = document.createElement("td");
-            areaCell.textContent = area.name;
-            row.appendChild(areaCell);
-
-            const gradeCell = document.createElement("td");
-            gradeCell.textContent = area.grade === "Watch" ? "津波注意報" :
-                                    area.grade === "Warning" ? "津波警報" : "大津波警報";
-            row.appendChild(gradeCell);
-
-            const heightCell = document.createElement("td");
-            heightCell.textContent = area.description;
-            row.appendChild(heightCell);
-
-            const conditionCell = document.createElement("td");
-            conditionCell.textContent = area.condition;
-            row.appendChild(conditionCell);
-
-            const sourceCell = document.createElement("td");
-            sourceCell.textContent = area.source;
-            row.appendChild(sourceCell);
-
-            const timeCell = document.createElement("td");
-            timeCell.textContent = area.time;
-            row.appendChild(timeCell);
-
-            tbody.appendChild(row);
-          });
+              row.innerHTML = `
+                <td>${area.name}</td>
+                <td>${area.grade === "Watch" ? "津波注意報" : area.grade === "Warning" ? "津波警報" : "大津波警報"}</td>
+                <td>${area.description}</td>
+                <td>${area.condition}</td>
+                <td>${area.source}</td>
+                <td>${area.time}</td>`;
+              tbody.appendChild(row);
+            });
         })
         .catch(error => {
           console.error("データ取得エラー:", error);
-        })
-        .finally(() => {
-          clockElement.textContent = timeString; // 時計を更新
         });
     }
 
-    // 初回データ取得と表示
+    // 初回表示と毎秒更新
+    updateClock();
     fetchAndDisplayData();
-
-    // 毎秒データと時計を更新
-    setInterval(fetchAndDisplayData, 1000);
+    setInterval(() => {
+      updateClock();
+      fetchAndDisplayData();
+    }, 1000);
   </script>
 </body>
 </html>

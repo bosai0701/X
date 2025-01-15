@@ -1,228 +1,174 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>降水ナウキャスト</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>リアルタイム津波情報</title>
   <link rel="icon" href="favicon.ico">
   <link rel="apple-touch-icon" href="favicon.ico">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@1.14.0/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl@1.14.0/dist/maplibre-gl.js"></script>
   <style>
-    body, html {
-      margin: 0;
-      overflow: hidden;
-      height: 100%;
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      display: none; /* 初期状態は非表示 */
     }
-
-    #map {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
     }
-
+    th {
+      background-color: #f4f4f4;
+    }
+    .watch {
+      background-color: #F9F551; /* 津波注意報 */
+    }
+    .warning {
+      background-color: #EA4225; /* 津波警報 */
+    }
+    .big-warning {
+      background-color: #B626F6; /* 大津波警報 */
+    }
+    .error-message {
+      color: red;
+      font-size: 18px;
+      margin-top: 20px;
+      display: none; /* 初期状態は非表示 */
+    }
     #clock {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 10px;
-      border-radius: 3px;
-      font-size: 14px;
-      font-family: Arial, sans-serif;
-    }
-
-    #attribution {
-      position: absolute;
-      bottom: 10px;
-      right: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 5px;
-      border-radius: 3px;
-      font-size: 12px;
-      font-family: Arial, sans-serif;
-      max-width: 200px;
-      text-align: center;
+      font-size: 20px;
+      margin-top: 10px;
+      font-weight: bold;
     }
   </style>
 </head>
-
 <body>
-  <div id="map"></div>
+  <h1>リアルタイム津波情報</h1>
   <div id="clock"></div>
-  <div id="attribution">
-    <div><a href="https://maps.gsi.go.jp/" target="_blank" rel="noopener noreferrer">地理院地図</a></div>
-    <div><a href="https://www.jma.go.jp/bosai/snow/" target="_blank" rel="noopener noreferrer">気象庁ナウキャスト</a></div>
+  <table id="tsunami-table">
+    <thead>
+      <tr>
+        <th>地域名</th>
+        <th>種別</th>
+        <th>最大津波高さ</th>
+        <th>状況</th>
+        <th>発表元</th>
+        <th>発表時刻</th>
+      </tr>
+    </thead>
+    <tbody id="tsunami-data">
+      <!-- データがここに挿入される -->
+    </tbody>
+  </table>
+  <div id="error-message" class="error-message">
+    大津波警報・津波警報・津波注意報は発表されていません
   </div>
+
   <script>
-    class MyControl {
-      constructor() {
-        this.url = null;
-        this.updateInterval = 1000;
-      }
+    const apiUrl = "https://api.p2pquake.net/v2/history?codes=552&limit=1";
 
-      onAdd(map) {
-        this._map = map;
-        this.setUpdateInterval();
-        return null;
-      }
-
-      async update() {
-        const newUrl = await this.fetchNowcastUrl();
-        if (this.url !== newUrl) {
-          this.url = newUrl;
-          this.updateLayer();
-        }
-      }
-
-      async fetchNowcastUrl() {
-        const res = await fetch("https://www.jma.go.jp/bosai/jmatile/data/snow/targetTimes_N1.json");
-        const json = await res.json();
-        const basetime = json[0].basetime;
-        const time = json[0].targetTime || basetime;
-        return `https://www.jma.go.jp/bosai/jmatile/data/snow/${basetime}/none/${time}/surf/hrpns/{z}/{x}/{y}.png`;
-      }
-
-      updateLayer() {
-        const key = "jma_hrpns";
-        const map = this._map;
-        let source = map.getSource(key);
-
-        if (!source) {
-          map.addSource(key, {
-            "type": "raster",
-            "tiles": [this.url],
-            "tileSize": 256,
-            "maxzoom": 10,
-            "minzoom": 3.5
-          });
-          map.addLayer({
-            "id": "jma_hrpns",
-            "type": "raster",
-            "source": key,
-            "minzoom": 3.5,
-            "maxzoom": 18,
-            "paint": {
-              "raster-opacity": 0.8,
-              "raster-resampling": "nearest",
-              "raster-fade-duration": 0
-            }
-          });
-        } else {
-          source.tiles = [this.url];
-          map.style.sourceCaches[key]._tiles = {};
-          map.style.sourceCaches[key].update(map.transform);
-          map.triggerRepaint();
-        }
-      }
-
-      setUpdateInterval() {
-        const updateNow = () => {
-          this.update();
-          setInterval(() => this.update(), this.updateInterval);
-        };
-
-        const now = new Date();
-        const seconds = now.getSeconds();
-        const millisecondsUntilNextSecond = (1000 - now.getMilliseconds());
-        setTimeout(updateNow, millisecondsUntilNextSecond);
-      }
-
-      onRemove() {
-        this._map = undefined;
-      }
-
-      getDefaultPosition() {
-        return 'top-left';
-      }
-    }
-
-    function updateClock() {
+    // データ取得と表示の処理
+    function fetchAndDisplayData() {
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
+      const date = String(now.getDate()).padStart(2, '0');
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const seconds = String(now.getSeconds()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-      const timeStr = `${hours}:${minutes}:${seconds}`;
-      document.getElementById('clock').textContent = `${dateStr} ${timeStr}`;
+      const timeString = `${year}年${month}月${date}日 ${hours}:${minutes}:${seconds}`;
+      const clockElement = document.getElementById("clock");
+
+      // 津波データの取得
+      fetch(apiUrl)
+        .then(response => response.json())
+        .then(data => {
+          const tbody = document.getElementById("tsunami-data");
+          const errorMessage = document.getElementById("error-message");
+          const table = document.getElementById("tsunami-table");
+
+          tbody.innerHTML = ""; // 以前のデータを消去
+          errorMessage.style.display = "none"; // エラーメッセージ非表示
+          table.style.display = "none"; // テーブル非表示
+
+          const allAreas = [];
+
+          data.forEach(event => {
+            event.areas.forEach(area => {
+              const areaData = {
+                name: area.name,
+                grade: area.grade,
+                maxHeight: area.maxHeight?.value || 0,
+                description: area.maxHeight?.description || "不明",
+                condition: area.firstHeight?.condition || "不明",
+                source: event.issue.source || "不明",
+                time: event.issue.time || "不明"
+              };
+              allAreas.push(areaData);
+            });
+          });
+
+          if (allAreas.length === 0) {
+            errorMessage.style.display = "block"; // エラーメッセージを表示
+            return;
+          }
+
+          table.style.display = "table"; // テーブルを表示
+          const sortedAreas = allAreas.sort((a, b) => b.maxHeight - a.maxHeight);
+          sortedAreas.forEach(area => {
+            const row = document.createElement("tr");
+
+            let rowClass = "";
+            if (area.grade === "Watch") {
+              rowClass = "watch";
+            } else if (area.grade === "Warning") {
+              rowClass = "warning";
+            } else if (area.grade === "BigWarning") {
+              rowClass = "big-warning";
+            }
+            row.className = rowClass;
+
+            const areaCell = document.createElement("td");
+            areaCell.textContent = area.name;
+            row.appendChild(areaCell);
+
+            const gradeCell = document.createElement("td");
+            gradeCell.textContent = area.grade === "Watch" ? "津波注意報" :
+                                    area.grade === "Warning" ? "津波警報" : "大津波警報";
+            row.appendChild(gradeCell);
+
+            const heightCell = document.createElement("td");
+            heightCell.textContent = area.description;
+            row.appendChild(heightCell);
+
+            const conditionCell = document.createElement("td");
+            conditionCell.textContent = area.condition;
+            row.appendChild(conditionCell);
+
+            const sourceCell = document.createElement("td");
+            sourceCell.textContent = area.source;
+            row.appendChild(sourceCell);
+
+            const timeCell = document.createElement("td");
+            timeCell.textContent = area.time;
+            row.appendChild(timeCell);
+
+            tbody.appendChild(row);
+          });
+        })
+        .catch(error => {
+          console.error("データ取得エラー:", error);
+        })
+        .finally(() => {
+          clockElement.textContent = timeString; // 時計を更新
+        });
     }
 
-    setInterval(updateClock, 1000);
+    // 初回データ取得と表示
+    fetchAndDisplayData();
 
-    const style = {
-      "version": 8,
-      "sources": {
-        "gsi_base": {
-          "type": "raster",
-          "tiles": [
-            "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"
-          ],
-          "tileSize": 256
-        }
-      },
-      "layers": [
-        {
-          "id": "background",
-          "type": "background",
-          "paint": {
-            "background-color": "#ffffff"
-          }
-        },
-        {
-          "id": "gsi_base",
-          "type": "raster",
-          "source": "gsi_base",
-          "minzoom": 0,
-          "maxzoom": 18,
-          "paint": {
-            "raster-saturation": -1
-          }
-        }
-      ]
-    };
-
-    const map = new maplibregl.Map({
-      container: "map",
-      center: [134.5, 34.5],
-      zoom: 3.5,
-      style: style,
-      pitch: 0,
-      bearing: 0,
-      dragRotate: false,
-      touchZoomRotate: { rotate: false }
-    });
-
-    map.on('load', () => {
-      map.setMinZoom(3.5);
-      map.setMaxZoom(12);
-
-      map.on('rotate', () => {
-        map.setBearing(0);
-      });
-      map.on('pitch', () => {
-        map.setPitch(0);
-      });
-
-      const control = new MyControl();
-      map.addControl(control);
-    });
-
-    function onResize() {
-      const mapContainer = document.getElementById('map');
-      mapContainer.style.width = '100vw';
-      mapContainer.style.height = '100vh';
-      map.resize();
-    }
-
-    window.addEventListener('resize', onResize);
-    onResize();
+    // 毎秒データと時計を更新
+    setInterval(fetchAndDisplayData, 1000);
   </script>
 </body>
-
 </html>

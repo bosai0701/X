@@ -1,151 +1,261 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>リアルタイム津波情報</title>
+  <meta charset="UTF-8" />
+  <title>地震情報リスト</title>
   <link rel="icon" href="favicon.ico">
-  <link rel="apple-touch-icon" href="favicon.ico">
   <style>
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      display: none; /* 初期状態で非表示 */
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      background: #f4f4f4;
+      padding: 20px;
     }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 8px;
-      text-align: left;
+    h1#pageTitle {
+      display: none;
+      margin-bottom: 20px;
+      margin-left: 20px;
+      font-size: 40px;
     }
-    th {
-      background-color: #f4f4f4;
+    .quake-card {
+      position: relative;
+      background: white;
+      border-left: 8px solid #999;
+      padding: 15px 20px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: background 0.3s;
     }
-    .watch {
-      background-color: #F9F551; /* 津波注意報 */
+    .quake-card:hover {
+      background: #f9f9f9;
     }
-    .warning {
-      background-color: #EA4225; /* 津波警報 */
-    }
-    .big-warning {
-      background-color: #B626F6; /* 大津波警報 */
-    }
-    .error-message {
-      color: red;
-      font-size: 18px;
-      margin-top: 20px;
-      display: none; /* 初期状態で非表示 */
-    }
-    #clock {
-      font-size: 20px;
-      margin-top: 10px;
+    .quake-header {
       font-weight: bold;
+      font-size: 1.1em;
+      margin-bottom: 5px;
     }
+    .quake-arrow {
+      position: absolute;
+      right: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1.2em;
+      transition: transform 0.3s ease;
+    }
+    .quake-card.open .quake-arrow {
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .quake-meta {
+      color: #555;
+      font-size: 0.9em;
+    }
+    .quake-detail {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease, opacity 0.4s ease, padding-top 0.4s ease;
+      opacity: 0;
+      padding-top: 0;
+      font-size: 0.9em;
+      line-height: 1.6em;
+      color: #333;
+    }
+    .quake-detail.open {
+      opacity: 1;
+      padding-top: 10px;
+    }
+    .quake-detail-section {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #ddd;
+    }
+    .shindo-block {
+      white-space: normal;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+    }
+    .border-7 { border-left-color: #AB20B2; }
+    .border-6強 { border-left-color: #701010; }
+    .border-6弱 { border-left-color: #BD2D22; }
+    .border-5強 { border-left-color: #DF6D2B; }
+    .border-5弱 { border-left-color: #FEA02F; }
+    .border-4 { border-left-color: #FFEB30; }
+    .border-3 { border-left-color: #84D384; }
+    .border-2 { border-left-color: #318FBF; }
+    .border-1 { border-left-color: #215070; }
+    .border-不明 { border-left-color: #2F4F4F; }
   </style>
 </head>
 <body>
-  <h1>リアルタイム津波情報</h1>
-  <div id="clock"></div>
-  <table id="tsunami-table">
-    <thead>
-      <tr>
-        <th>地域名</th>
-        <th>種別</th>
-        <th>最大津波高さ</th>
-        <th>状況</th>
-        <th>発表元</th>
-        <th>発表時刻</th>
-      </tr>
-    </thead>
-    <tbody id="tsunami-data">
-      <!-- データがここに挿入される -->
-    </tbody>
-  </table>
-  <div id="error-message" class="error-message">
-    大津波警報・津波警報・津波注意報は発表されていません
-  </div>
+  <h1 id="pageTitle">地震情報リスト</h1>
+  <div id="quakeContainer"></div>
 
   <script>
-    const apiUrl = "https://api.p2pquake.net/v2/history?codes=552&limit=1";
+    const container = document.getElementById("quakeContainer");
+    const pageTitle = document.getElementById("pageTitle");
+    let lastJsonFile = "";
 
-    // 時計の更新
-    function updateClock() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const date = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      const timeString = `${year}年${month}月${date}日 ${hours}:${minutes}:${seconds}`;
-      document.getElementById("clock").textContent = timeString;
+    const intensityClassMap = {
+      "7": "border-7", "6強": "border-6強", "6弱": "border-6弱",
+      "5強": "border-5強", "5弱": "border-5弱", "4": "border-4",
+      "3": "border-3", "2": "border-2", "1": "border-1", "不明": "border-不明"
+    };
+
+    function toggleCard(card, detail, arrow) {
+      const isOpen = card.classList.toggle('open');
+      if (isOpen) {
+        detail.classList.add('open');
+        detail.style.maxHeight = detail.scrollHeight + "px";
+        arrow.style.transform = "translateY(-50%) rotate(180deg)";
+      } else {
+        detail.classList.remove('open');
+        detail.style.maxHeight = 0;
+        arrow.style.transform = "translateY(-50%) rotate(0deg)";
+      }
     }
 
-    // データ取得と表示の処理
-    function fetchAndDisplayData() {
-      fetch(apiUrl)
-        .then(response => response.json())
-        .then(data => {
-          const tbody = document.getElementById("tsunami-data");
-          const errorMessage = document.getElementById("error-message");
-          const table = document.getElementById("tsunami-table");
+    async function fetchAllAvailableQuakes(jsonList) {
+      pageTitle.style.display = "block";
+      container.innerHTML = "";
 
-          tbody.innerHTML = ""; // 以前のデータを消去
-          errorMessage.style.display = "none"; // エラーメッセージ非表示
-          table.style.display = "none"; // テーブル非表示
+      // 発表情報の中で最新のSerialのみを抽出
+      const latestByEvent = {};
+      for (const item of jsonList) {
+        const res = await fetch(`https://www.jma.go.jp/bosai/quake/data/${item.json}`);
+        const data = await res.json();
+        const eventId = data.Head?.EventID || data.Control?.EventID;
+        const serial = parseInt(data.Head?.Serial || "1", 10);
+        if (!eventId) continue;
+        if (!latestByEvent[eventId] || latestByEvent[eventId].serial < serial) {
+          latestByEvent[eventId] = { item, serial };
+        }
+      }
 
-          const allAreas = [];
+      const filteredList = Object.values(latestByEvent).map(obj => obj.item);
 
-          data.forEach(event => {
-            event.areas.forEach(area => {
-              allAreas.push({
-                name: area.name,
-                grade: area.grade,
-                maxHeight: area.maxHeight?.value || 0,
-                description: area.maxHeight?.description || "不明",
-                condition: area.firstHeight?.condition || "不明",
-                source: event.issue.source || "不明",
-                time: event.issue.time || "不明"
+      for (const item of filteredList) {
+        const res = await fetch(`https://www.jma.go.jp/bosai/quake/data/${item.json}`);
+        const data = await res.json();
+
+        const control = data.Control;
+        const head = data.Head;
+        const body = data.Body;
+        const eq = body?.Earthquake;
+        const int = body?.Intensity?.Observation;
+
+        const title = control?.Title || head?.Title || "";
+        if (!title.includes("震源・震度") && !title.includes("遠地地震")) continue;
+
+        let maxInt = int?.MaxInt?.replace('5-', '5弱').replace('5+', '5強')
+                                  .replace('6-', '6弱').replace('6+', '6強') || '不明';
+        const className = intensityClassMap[maxInt] || 'border-不明';
+        const hypocenter = eq?.Hypocenter?.Area?.Name || "震源不明";
+
+        const card = document.createElement("div");
+        card.className = `quake-card ${className}`;
+
+        const header = document.createElement("div");
+        header.className = "quake-header";
+        header.innerText = `最大震度${maxInt} - ${hypocenter}`;
+        card.appendChild(header);
+
+        const arrow = document.createElement("span");
+        arrow.className = "quake-arrow";
+        arrow.innerText = "▼";
+        card.appendChild(arrow);
+
+        const time = document.createElement("div");
+        time.className = "quake-meta";
+        if (eq?.OriginTime) {
+          time.innerText = `発生時刻: ${new Date(eq.OriginTime).toLocaleString()}`;
+        }
+        card.appendChild(time);
+
+        const detail = document.createElement("div");
+        detail.className = "quake-detail";
+
+        let html = "";
+
+        if (control?.Title) html += `詳細情報: ${control.Title}<br>`;
+        if (control?.EditorialOffice) html += `編集官署: ${control.EditorialOffice}<br>`;
+        if (head?.InfoType && head?.Serial) html += `情報種別: ${head.InfoType} ${head.Serial}<br>`;
+        if (eq?.Hypocenter?.Area?.Code) html += `震央コード: ${eq.Hypocenter.Area.Code}<br>`;
+        if (eq?.Magnitude) html += `マグニチュード: ${eq.Magnitude}<br>`;
+
+        const coord = eq?.Hypocenter?.Area?.Coordinate;
+        if (coord && /^[\+\-][0-9.]+[\+\-][0-9.]+/.test(coord)) {
+          const match = coord.match(/([+\-][0-9.]+)([+\-][0-9.]+)([+\-][0-9]+)?/);
+          if (match) {
+            const lat = match[1].replace(/[+\-]/g, '');
+            const lon = match[2].replace(/[+\-]/g, '');
+            html += `座標: 緯度 ${lat} / 経度 ${lon}<br>`;
+            if (match[3]) {
+              const depth = Math.abs(parseInt(match[3], 10)) / 1000;
+              html += `深さ: ${depth === 0 ? "ごく浅い" : `約${depth}km`}<br>`;
+            }
+          }
+        }
+
+        if (head?.Headline?.Text) html += `コメント: ${head.Headline.Text}<br>`;
+        if (body?.Comments?.ForecastComment?.Text) html += `津波情報: ${body.Comments.ForecastComment.Text}<br>`;
+        if (body?.Comments?.FreeFormComment) html += `備考: ${body.Comments.FreeFormComment}<br>`;
+        if (control?.PublishingOffice) html += `提供元: ${control.PublishingOffice}<br>`;
+
+        if (int?.Pref?.length > 0) {
+          const groups = {};
+          int.Pref.forEach(pref => {
+            pref.Area?.forEach(area => {
+              area.City?.forEach(city => {
+                city.IntensityStation?.forEach(station => {
+                  let intensity = station.Int || '不明';
+                  intensity = intensity.replace('5-', '5弱').replace('5+', '5強')
+                                       .replace('6-', '6弱').replace('6+', '6強');
+                  const name = station.Name.replace('＊', '');
+                  if (!groups[intensity]) groups[intensity] = {};
+                  if (!groups[intensity][pref.Name]) groups[intensity][pref.Name] = new Set();
+                  groups[intensity][pref.Name].add(name);
+                });
               });
             });
           });
 
-          if (allAreas.length === 0) {
-            errorMessage.style.display = "block"; // エラーメッセージを表示
-            return;
-          }
+          const order = ['7', '6強', '6弱', '5強', '5弱', '4', '3', '2', '1', '不明'];
+          html += `<div class="quake-detail-section shindo-block"><strong>各地の震度</strong><br>`;
+          order.forEach(level => {
+            if (groups[level]) {
+              html += `<div style="font-weight:bold; margin-top:8px;">震度 ${level}</div>`;
+              for (const pref in groups[level]) {
+                const names = Array.from(groups[level][pref]).join('　');
+                html += `<div>[${pref}]</div><div style="margin-left:10px;">${names}</div>`;
+              }
+            }
+          });
+          html += `</div>`;
+        }
 
-          table.style.display = "table"; // テーブルを表示
-          allAreas
-            .sort((a, b) => b.maxHeight - a.maxHeight)
-            .forEach(area => {
-              const row = document.createElement("tr");
-              row.className = 
-                area.grade === "Watch" ? "watch" :
-                area.grade === "Warning" ? "warning" : 
-                area.grade === "BigWarning" ? "big-warning" : "";
-
-              row.innerHTML = `
-                <td>${area.name}</td>
-                <td>${area.grade === "Watch" ? "津波注意報" : area.grade === "Warning" ? "津波警報" : "大津波警報"}</td>
-                <td>${area.description}</td>
-                <td>${area.condition}</td>
-                <td>${area.source}</td>
-                <td>${area.time}</td>`;
-              tbody.appendChild(row);
-            });
-        })
-        .catch(error => {
-          console.error("データ取得エラー:", error);
-        });
+        detail.innerHTML = html;
+        card.appendChild(detail);
+        card.addEventListener("click", () => toggleCard(card, detail, arrow));
+        container.appendChild(card);
+      }
     }
 
-    // 初回表示と毎秒更新
-    updateClock();
-    fetchAndDisplayData();
-    setInterval(() => {
-      updateClock();
-      fetchAndDisplayData();
-    }, 1000);
+    async function checkForUpdates() {
+      try {
+        const res = await fetch('https://www.jma.go.jp/bosai/quake/data/list.json');
+        const jsonList = await res.json();
+        const latest = jsonList[0]?.json;
+        if (!latest || latest === lastJsonFile) return;
+        lastJsonFile = latest;
+        await fetchAllAvailableQuakes(jsonList);
+      } catch (e) {
+        container.innerHTML = "エラー: " + e.message;
+      }
+    }
+
+    checkForUpdates();
+    setInterval(checkForUpdates, 500);
   </script>
 </body>
 </html>
